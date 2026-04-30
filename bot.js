@@ -1,31 +1,36 @@
 const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
 
-// استبدل النص التالي بالتوكن الجديد اللي أخذته من BotFather
-const token = '8731162959:AAGZcy4RB4waZRYNgZtFVRwY_YYmW8p-ztg'; 
+// حط توكن بوتك هنا
+const token = '8731162959:AAGZcy4RB4waZRYNgZtFVRwY_YYmW8p-ztg';
 const bot = new TelegramBot(token, {polling: true});
 
-console.log("✅ بوت LYNX شغال بأمان وبدون أخطاء...");
+console.log("✅ LYNX Skipper is active!");
+
+bot.onText(/\/start/, (msg) => {
+    bot.sendMessage(msg.chat.id, "أهلاً بك في LYNX Skipper 🐆\nأرسل لي أي رابط مختصر وسأحاول تخطيه لك.");
+});
 
 bot.on('message', async (msg) => {
-    const chatId = msg.chat.id;
     const text = msg.text;
 
-    if (text === '/start') {
-        return bot.sendMessage(chatId, "أهلاً بك في بوت LYNX! 🐆\nأرسل لي أي رابط مختصر وسأقوم بتخطيه لك فوراً.");
-    }
+    // التأكد أن الرسالة تحتوي على رابط
+    if (text && (text.startsWith('http') || text.includes('link'))) {
+        bot.sendMessage(msg.chat.id, "⏳ جاري محاولة التخطي... انتظر ثواني.");
 
-    if (text && text.startsWith('http')) {
-        bot.sendMessage(chatId, "⏳ جاري فحص الرابط وتخطيه...");
         try {
+            // استخدام API مجاني للتخطي (بإمكانك تغييره لاحقاً)
             const response = await axios.get(`https://api.bypass.vip/bypass?url=${encodeURIComponent(text)}`);
+            
             if (response.data && response.data.destination) {
-                bot.sendMessage(chatId, `✅ تم التخطي بنجاح!\n\n🔗 الرابط المباشر:\n${response.data.destination}`);
+                bot.sendMessage(msg.chat.id, `✅ تم التخطي بنجاح!\n\n🔗 الرابط الأصلي:\n${response.data.destination}`);
             } else {
-                bot.sendMessage(chatId, "❌ هذا الرابط غير مدعوم حالياً.");
+                // إذا فشل الـ API، نحاول نجيب الرابط النهائي عن طريق تتبع التحويلات
+                const res = await axios.get(text, { maxRedirects: 5 });
+                bot.sendMessage(msg.chat.id, `🔗 الرابط النهائي المحتمل:\n${res.request.res.responseUrl}`);
             }
-        } catch (e) {
-            bot.sendMessage(chatId, "⚠️ عذراً، حدث خطأ في سيرفر التخطي.");
+        } catch (error) {
+            bot.sendMessage(msg.chat.id, "❌ عذراً، لم أتمكن من تخطي هذا الرابط. قد يكون محمي بشكل قوي.");
         }
     }
 });
