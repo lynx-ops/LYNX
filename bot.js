@@ -1,36 +1,82 @@
 const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
 
-// حط توكن بوتك هنا
 const token = '8731162959:AAGZcy4RB4waZRYNgZtFVRwY_YYmW8p-ztg';
-const bot = new TelegramBot(token, {polling: true});
+const bot = new TelegramBot(token, { polling: true });
 
 console.log("✅ LYNX Skipper is active!");
 
+// دالة للتحقق من الرابط
+const isValidUrl = (text) => {
+  try {
+    new URL(text);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+// رسالة الترحيب
 bot.onText(/\/start/, (msg) => {
-    bot.sendMessage(msg.chat.id, "أهلاً بك في LYNX Skipper 🐆\nأرسل لي أي رابط مختصر وسأحاول تخطيه لك.");
+  bot.sendMessage(msg.chat.id,
+    "أهلاً بك في LYNX Skipper 🐆\nأرسل لي أي رابط مختصر وسأحاول تتبعه لك."
+  );
 });
 
+// معالجة الرسائل
 bot.on('message', async (msg) => {
-    const text = msg.text;
+  const text = msg.text;
 
-    // التأكد أن الرسالة تحتوي على رابط
-    if (text && (text.startsWith('http') || text.includes('link'))) {
-        bot.sendMessage(msg.chat.id, "⏳ جاري محاولة التخطي... انتظر ثواني.");
+  // تجاهل الأوامر
+  if (!text || text.startsWith('/')) return;
 
-        try {
-            // استخدام API مجاني للتخطي (بإمكانك تغييره لاحقاً)
-            const response = await axios.get(`https://api.bypass.vip/bypass?url=${encodeURIComponent(text)}`);
-            
-            if (response.data && response.data.destination) {
-                bot.sendMessage(msg.chat.id, `✅ تم التخطي بنجاح!\n\n🔗 الرابط الأصلي:\n${response.data.destination}`);
-            } else {
-                // إذا فشل الـ API، نحاول نجيب الرابط النهائي عن طريق تتبع التحويلات
-                const res = await axios.get(text, { maxRedirects: 5 });
-                bot.sendMessage(msg.chat.id, `🔗 الرابط النهائي المحتمل:\n${res.request.res.responseUrl}`);
-            }
-        } catch (error) {
-            bot.sendMessage(msg.chat.id, "❌ عذراً، لم أتمكن من تخطي هذا الرابط. قد يكون محمي بشكل قوي.");
-        }
+  // التحقق من الرابط
+  if (!isValidUrl(text)) {
+    return bot.sendMessage(msg.chat.id, "⚠️ من فضلك أرسل رابطاً صحيحاً يبدأ بـ http أو https.");
+  }
+
+  await bot.sendMessage(msg.chat.id, "⏳ جاري تتبع الرابط... انتظر ثواني.");
+
+  try {
+    // المحاولة الأولى: bypass.vip API
+    const apiRes = await axios.get(
+      `https://api.bypass.vip/bypass?url=${encodeURIComponent(text)}`,
+      { timeout: 8000 }
+    );
+
+    if (apiRes.data?.destination) {
+      return bot.sendMessage(msg.chat.id,
+        `✅ تم بنجاح!\n\n🔗 الرابط النهائي:\n${apiRes.data.destination}`
+      );
     }
+
+    throw new Error("No destination found");
+
+  } catch {
+    // المحاولة الثانية: تتبع التحويلات يدوياً
+    try {
+      const res = await axios.get(text, {
+        maxRedirects: 10,
+        timeout: 10000,
+        headers: {
+          'User-Agent': 'Mozilla/5.0'
+        }
+      });
+
+      const finalUrl = res.request?.res?.responseUrl || res.config?.url;
+
+      if (finalUrl && finalUrl !== text) {
+        return bot.sendMessage(msg.chat.id,
+          `🔗 الرابط النهائي:\n${finalUrl}`
+        );
+      }
+
+      bot.sendMessage(msg.chat.id, "ℹ️ الرابط لا يحتوي على تحويلات.");
+
+    } catch (err) {
+      bot.sendMessage(msg.chat.id,
+        `❌ فشل التتبع.\nالسبب: ${err.message || "خطأ غير معروف"}`
+      );
+    }
+  }
 });
